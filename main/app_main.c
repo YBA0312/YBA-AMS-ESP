@@ -426,12 +426,12 @@ static void do_retransmit(const int sock)
                     }
 
                     // 临时先用着
-                    if (dc->fx == FORWARD)
+                    if (dc->fx == REVERSE)
                     {
                         gpio_set_level(io_num[id - 1][0], 1);
                         gpio_set_level(io_num[id - 1][1], 0);
                     }
-                    else if (dc->fx == REVERSE)
+                    else if (dc->fx == FORWARD)
                     {
                         gpio_set_level(io_num[id - 1][0], 0);
                         gpio_set_level(io_num[id - 1][1], 1);
