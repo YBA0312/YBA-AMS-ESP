@@ -89,8 +89,8 @@ typedef enum
 typedef enum
 {
     STOP,    /**< 停止 */
-    FORWARD, /**< 送料 */
     REVERSE, /**< 退料 */
+    FORWARD, /**< 送料 */
 } yba_ams_dc_fx_e;
 
 typedef struct
