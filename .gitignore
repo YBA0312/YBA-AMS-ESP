@@ -1,0 +1,12 @@
+build
+.vscode
+.visualgdb
+.vs
+trace
+out
+CMakeSettings.json
+server_certs
+Doxyfile
+doc
+sdkconfig.old
+managed_components/
