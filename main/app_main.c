@@ -54,10 +54,10 @@
 #define M3_DOWN 3
 #define M4_UP 10
 #define M4_DOWN 6
-#define M5_UP 7
-#define M5_DOWN 5
-#define M6_UP 4
-#define M6_DOWN 8
+#define SW1 7
+#define SW2 5
+#define SW3 4
+#define SW4 8
 
 #define LED1 12
 #define LED2 13
@@ -70,12 +70,13 @@
                              (1ULL << M3_DOWN) | \
                              (1ULL << M4_UP) |   \
                              (1ULL << M4_DOWN) | \
-                             (1ULL << M5_UP) |   \
-                             (1ULL << M5_DOWN) | \
-                             (1ULL << M6_UP) |   \
-                             (1ULL << M6_DOWN) | \
                              (1ULL << LED1) |    \
                              (1ULL << LED2))
+
+#define GPIO_INPUT_PIN_SEL ((1ULL << SW1) | \
+                            (1ULL << SW2) | \
+                            (1ULL << SW3) | \
+                            (1ULL << SW4))
 
 #define ATTR_NO_ALIGN __attribute__((packed))
 
@@ -109,18 +110,15 @@ typedef struct
     uint8_t id;          /**< 电机位号 */
     uint8_t fx;          /**< 方向 */
     uint8_t duty;        /**< 占空百分比 */
-    uint32_t shift_time; /**< 变速时间ms */
     uint32_t timeout;    /**< 超时时间ms */
+    uint32_t shift_time; /**< 变速时间ms */
 } ATTR_NO_ALIGN yba_ams_dc_t;
 
-int io_num[6][2] = {
+int ch_io[6][2] = {
     {M1_UP, M1_DOWN},
     {M2_UP, M2_DOWN},
     {M3_UP, M3_DOWN},
-    {M4_UP, M4_DOWN},
-    {M5_UP, M5_DOWN},
-    {M6_UP, M6_DOWN},
-};
+    {M4_UP, M4_DOWN}};
 
 static const char *TAG = "app";
 
@@ -128,6 +126,10 @@ static const char *TAG = "app";
 #if CONFIG_EXAMPLE_PROV_SEC2_DEV_MODE
 #define EXAMPLE_PROV_SEC2_USERNAME "wifiprov"
 #define EXAMPLE_PROV_SEC2_PWD "abcd1234"
+
+// 各个通道当前状态
+int channel_status[4] = {0, 0, 0, 0};
+int switch_status[4] = {0, 0, 0, 0};
 
 /* This salt,verifier has been generated for username = "wifiprov" and password = "abcd1234"
  * IMPORTANT NOTE: For production cases, this must be unique to every device
@@ -198,6 +200,34 @@ static EventGroupHandle_t wifi_event_group;
 #define PROV_TRANSPORT_SOFTAP "softap"
 #define PROV_TRANSPORT_BLE "ble"
 #define QRCODE_BASE_URL "https://espressif.github.io/esp-jumpstart/qrcode.html"
+
+static void IRAM_ATTR gpio_isr_handler(void *arg)
+{
+    switch_status[(uint32_t)arg] = 6;
+}
+
+void motor_control(int id, int fx) // , int duty, int timeout, int shift_time)
+{
+    // 临时先用着
+    switch (fx)
+    {
+    case REVERSE:
+        channel_status[id] = REVERSE;
+        gpio_set_level(ch_io[id][0], 1);
+        gpio_set_level(ch_io[id][1], 0);
+        break;
+    case FORWARD:
+        channel_status[id] = FORWARD;
+        gpio_set_level(ch_io[id][0], 0);
+        gpio_set_level(ch_io[id][1], 1);
+        break;
+    case STOP:
+        channel_status[id] = STOP;
+        gpio_set_level(ch_io[id][0], 0);
+        gpio_set_level(ch_io[id][1], 0);
+        break;
+    }
+}
 
 /* Event handler for catching system events */
 static void event_handler(void *arg, esp_event_base_t event_base,
@@ -419,28 +449,12 @@ static void do_retransmit(const int sock)
                 case DC_MOTOR_CONTROL:
                 {
                     yba_ams_dc_t *dc = (yba_ams_dc_t *)frame->data;
-                    int id = dc->id - MY_ADDR * 6;
-                    if (id < 1 || id > 6)
+                    int id = dc->id - MY_ADDR * 4;
+                    if (id < 1 || id > 4)
                     {
                         break;
                     }
-
-                    // 临时先用着
-                    if (dc->fx == REVERSE)
-                    {
-                        gpio_set_level(io_num[id - 1][0], 1);
-                        gpio_set_level(io_num[id - 1][1], 0);
-                    }
-                    else if (dc->fx == FORWARD)
-                    {
-                        gpio_set_level(io_num[id - 1][0], 0);
-                        gpio_set_level(io_num[id - 1][1], 1);
-                    }
-                    else if (dc->fx == STOP)
-                    {
-                        gpio_set_level(io_num[id - 1][0], 0);
-                        gpio_set_level(io_num[id - 1][1], 0);
-                    }
+                    motor_control(id - 1, dc->fx);
 
                     sock_send(sock, STATUS, NULL, 0);
                 }
@@ -578,10 +592,23 @@ void GPIO_INIT()
     io_conf.pull_up_en = 0;
     gpio_config(&io_conf);
 
-    for (int i = 0; i < 6; i++)
+    io_conf.intr_type = GPIO_INTR_POSEDGE;
+    io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_down_en = 1;
+    io_conf.pull_up_en = 0;
+    gpio_config(&io_conf);
+
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(SW1, gpio_isr_handler, (void *)0);
+    gpio_isr_handler_add(SW2, gpio_isr_handler, (void *)1);
+    gpio_isr_handler_add(SW3, gpio_isr_handler, (void *)2);
+    gpio_isr_handler_add(SW4, gpio_isr_handler, (void *)3);
+
+    for (int i = 0; i < 4; i++)
     {
-        gpio_set_level(io_num[i][0], 0);
-        gpio_set_level(io_num[i][1], 0);
+        gpio_set_level(ch_io[i][0], 0);
+        gpio_set_level(ch_io[i][1], 0);
     }
 
     gpio_set_level(LED1, 1);
@@ -850,10 +877,31 @@ void app_main(void)
     xTaskCreate(tcp_server_task, "tcp_server", 4096, (void *)AF_INET6, 5, NULL);
 #endif
 
+    ESP_LOGI(TAG, "Hello YBA-AMS!");
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+
     while (1)
     {
-        ESP_LOGI(TAG, "Hello YBA-AMS!");
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        for (int i = 0; i < 4; i++)
+        {
+            if (channel_status[i] == STOP)
+            {
+                if (switch_status[i] > 1)
+                {
+                    gpio_set_level(ch_io[i][0], 0);
+                    gpio_set_level(ch_io[i][1], 1);
+                    switch_status[i]--;
+                }
+                else if (switch_status[i] == 1)
+                {
+                    gpio_set_level(ch_io[i][0], 0);
+                    gpio_set_level(ch_io[i][1], 0);
+                    switch_status[i]--;
+                    // motor_control(id, channel_status[id]);
+                }
+            }
+        }
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 #endif
 }

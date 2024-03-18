@@ -13,10 +13,10 @@
 | M3_DOWN  | 3      |
 | M4_UP    | 10     |
 | M4_DOWN  | 6      |
-| M5_UP    | 7      |
-| M5_DOWN  | 5      |
-| M6_UP    | 4      |
-| M6_DOWN  | 8      |
+| SW1U     | 7      |
+| SW2U     | 5      |
+| SW3U     | 4      |
+| SW4U     | 8      |
 
 TCP 通讯协议
 端口 3333
