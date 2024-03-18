@@ -120,6 +120,8 @@ int ch_io[6][2] = {
     {M3_UP, M3_DOWN},
     {M4_UP, M4_DOWN}};
 
+int sw_io[4] = {SW1, SW2, SW3, SW4};
+
 static const char *TAG = "app";
 
 #if CONFIG_EXAMPLE_PROV_SECURITY_VERSION_2
@@ -450,11 +452,11 @@ static void do_retransmit(const int sock)
                 {
                     yba_ams_dc_t *dc = (yba_ams_dc_t *)frame->data;
                     int id = dc->id - MY_ADDR * 4;
-                    if (id < 1 || id > 4)
+                    if (id < 0 || id >= 4)
                     {
                         break;
                     }
-                    motor_control(id - 1, dc->fx);
+                    motor_control(id, dc->fx);
 
                     sock_send(sock, STATUS, NULL, 0);
                 }
@@ -899,6 +901,10 @@ void app_main(void)
                     switch_status[i]--;
                     // motor_control(id, channel_status[id]);
                 }
+            }
+            else
+            {
+                switch_status[i] = 0;
             }
         }
         vTaskDelay(100 / portTICK_PERIOD_MS);
