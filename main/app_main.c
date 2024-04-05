@@ -114,7 +114,7 @@ typedef struct
     uint32_t shift_time; /**< 变速时间ms */
 } ATTR_NO_ALIGN yba_ams_dc_t;
 
-int ch_io[6][2] = {
+int ch_io[4][4] = {
     {M1_UP, M1_DOWN},
     {M2_UP, M2_DOWN},
     {M3_UP, M3_DOWN},
@@ -203,10 +203,10 @@ static EventGroupHandle_t wifi_event_group;
 #define PROV_TRANSPORT_BLE "ble"
 #define QRCODE_BASE_URL "https://espressif.github.io/esp-jumpstart/qrcode.html"
 
-static void IRAM_ATTR gpio_isr_handler(void *arg)
-{
-    switch_status[(uint32_t)arg] = 6;
-}
+// static void IRAM_ATTR gpio_isr_handler(void *arg)
+// {
+//     switch_status[(uint32_t)arg] = 6;
+// }
 
 void motor_control(int id, int fx) // , int duty, int timeout, int shift_time)
 {
@@ -548,7 +548,9 @@ static void tcp_server_task(void *pvParameters)
         if (sock < 0)
         {
             ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
-            break;
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            continue;
+            ;
         }
 
         // Set tcp keepalive option
@@ -574,7 +576,10 @@ static void tcp_server_task(void *pvParameters)
         gpio_set_level(LED2, 1);
         do_retransmit(sock);
         gpio_set_level(LED2, 0);
-
+        for (int i = 0; i < 4; i++)
+        {
+            motor_control(i, 0);
+        }
         shutdown(sock, 0);
         close(sock);
     }
@@ -594,18 +599,25 @@ void GPIO_INIT()
     io_conf.pull_up_en = 0;
     gpio_config(&io_conf);
 
-    io_conf.intr_type = GPIO_INTR_POSEDGE;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
     io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
     io_conf.mode = GPIO_MODE_INPUT;
     io_conf.pull_down_en = 1;
     io_conf.pull_up_en = 0;
     gpio_config(&io_conf);
 
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(SW1, gpio_isr_handler, (void *)0);
-    gpio_isr_handler_add(SW2, gpio_isr_handler, (void *)1);
-    gpio_isr_handler_add(SW3, gpio_isr_handler, (void *)2);
-    gpio_isr_handler_add(SW4, gpio_isr_handler, (void *)3);
+    // io_conf.intr_type = GPIO_INTR_POSEDGE;
+    // io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
+    // io_conf.mode = GPIO_MODE_INPUT;
+    // io_conf.pull_down_en = 1;
+    // io_conf.pull_up_en = 0;
+    // gpio_config(&io_conf);
+
+    // gpio_install_isr_service(0);
+    // gpio_isr_handler_add(SW1, gpio_isr_handler, (void *)0);
+    // gpio_isr_handler_add(SW2, gpio_isr_handler, (void *)1);
+    // gpio_isr_handler_add(SW3, gpio_isr_handler, (void *)2);
+    // gpio_isr_handler_add(SW4, gpio_isr_handler, (void *)3);
 
     for (int i = 0; i < 4; i++)
     {
@@ -615,6 +627,7 @@ void GPIO_INIT()
 
     gpio_set_level(LED1, 1);
     gpio_set_level(LED2, 0);
+
 }
 
 void app_main(void)
@@ -632,6 +645,18 @@ void app_main(void)
     }
 
     GPIO_INIT();
+
+    for (int i = 0; i < 4; i++)
+    {
+        gpio_set_level(ch_io[i][0], 0);
+        gpio_set_level(ch_io[i][1], 1);
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+        gpio_set_level(ch_io[i][0], 1);
+        gpio_set_level(ch_io[i][1], 0);
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+        gpio_set_level(ch_io[i][0], 0);
+        gpio_set_level(ch_io[i][1], 0);
+    }
 
     /* Initialize TCP/IP */
     ESP_ERROR_CHECK(esp_netif_init());
@@ -884,27 +909,37 @@ void app_main(void)
 
     while (1)
     {
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 3; i++)
         {
-            if (channel_status[i] == STOP)
+            if (channel_status[i] == REVERSE)
             {
-                if (switch_status[i] > 1)
-                {
-                    gpio_set_level(ch_io[i][0], 0);
-                    gpio_set_level(ch_io[i][1], 1);
-                    switch_status[i]--;
-                }
-                else if (switch_status[i] == 1)
+                if (gpio_get_level(sw_io[i]) == 1)
                 {
                     gpio_set_level(ch_io[i][0], 0);
                     gpio_set_level(ch_io[i][1], 0);
-                    switch_status[i]--;
-                    // motor_control(id, channel_status[id]);
+                }
+                else
+                {
+                    gpio_set_level(ch_io[i][0], 1);
+                    gpio_set_level(ch_io[i][1], 0);
                 }
             }
             else
             {
-                switch_status[i] = 0;
+                if (gpio_get_level(sw_io[i]) == 1)
+                {
+                    switch_status[i] = 5;
+                    gpio_set_level(ch_io[i][0], 0);
+                    gpio_set_level(ch_io[i][1], 1);
+                }
+                else if (switch_status[i] > 0)
+                {
+                    if (switch_status[i] == 1)
+                    {
+                        motor_control(i, channel_status[i]);
+                    }
+                    switch_status[i]--;
+                }
             }
         }
         vTaskDelay(100 / portTICK_PERIOD_MS);
